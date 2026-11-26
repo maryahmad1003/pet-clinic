@@ -1,0 +1,37 @@
+{
+  "generator-jhipster": {
+    "applicationType": "monolith",
+    "authenticationType": "jwt",
+    "baseName": "petclinic",
+    "buildTool": "maven",
+    "cacheProvider": null,
+    "clientFramework": "angular",
+    "clientTheme": "none",
+    "creationTimestamp": 1795698303401,
+    "databaseType": "sql",
+    "defaultCommand": "app",
+    "devDatabaseType": "mysql",
+    "enableHibernateCache": null,
+    "enableTranslation": true,
+    "entities": ["Clinique", "Medecin", "Client", "Animal", "RendezVous"],
+    "feignClient": null,
+    "jhipsterVersion": "9.4.0",
+    "jwtSecretKey": "NmQ3NmExNjYwNWRmM2JiYWI3MTJiYTBjYWYzNmZkOWVlY2JkYzIwM2MyOTY5MGE3NTQ3Yjk5NDQ0ZWIxZTkyMjdiZmI4Yzk0MjAxOTY2YTEwMThhMzQzMTNmNjQ5MjYwZDQ4OTJiZWExZGU1ZjE3YjNkZmJmYTI3NTlhZGJkYjc=",
+    "languages": ["fr"],
+    "lastLiquibaseTimestamp": 1795699559000,
+    "microfrontend": null,
+    "microfrontends": [],
+    "nativeLanguage": "fr",
+    "packageName": "com.petclinic.app",
+    "prodDatabaseType": "mysql",
+    "promptValues": {
+      "nativeLanguage": "fr"
+    },
+    "reactive": true,
+    "serverPort": null,
+    "serviceDiscoveryType": null,
+    "syncUserWithIdp": null,
+    "testFrameworks": [],
+    "withAdminUi": true
+  }
+}

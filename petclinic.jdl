@@ -1,0 +1,43 @@
+entity Clinique {
+    nom String required maxlength(100)
+    adresse String required maxlength(255)
+    telephone String maxlength(20)
+}
+
+entity Medecin {
+    nom String required maxlength(80)
+    prenom String required maxlength(80)
+    specialite String required maxlength(100)
+    email String required unique
+}
+
+entity Client {
+    nom String required maxlength(80)
+    prenom String required maxlength(80)
+    adresse String maxlength(255)
+    telephone String maxlength(20)
+}
+
+entity Animal {
+    nom String required maxlength(80)
+    espece String required maxlength(50)
+    dateNaissance LocalDate
+    poids BigDecimal min(0)
+}
+
+entity RendezVous {
+    date LocalDate required
+    heure String required pattern(/^([01]\d|2[0-3]):[0-5]\d$/)
+    motif String required maxlength(500)
+}
+
+relationship ManyToOne {
+    Medecin{clinique(nom)} to Clinique
+    Animal{client(nom)} to Client
+    RendezVous{animal(nom)} to Animal
+    RendezVous{medecin(nom)} to Medecin
+    RendezVous{clinique(nom)} to Clinique
+}
+
+paginate * with pagination
+service * with serviceClass

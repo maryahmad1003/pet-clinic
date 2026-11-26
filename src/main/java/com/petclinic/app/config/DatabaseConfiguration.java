@@ -1,0 +1,196 @@
+package com.petclinic.app.config;
+
+import io.r2dbc.spi.ConnectionFactory;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneOffset;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.List;
+import java.util.UUID;
+import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.convert.converter.Converter;
+import org.springframework.data.convert.ReadingConverter;
+import org.springframework.data.convert.WritingConverter;
+import org.springframework.data.r2dbc.convert.R2dbcConverter;
+import org.springframework.data.r2dbc.convert.R2dbcCustomConversions;
+import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
+import org.springframework.data.r2dbc.dialect.DialectResolver;
+import org.springframework.data.r2dbc.dialect.MySqlDialect;
+import org.springframework.data.r2dbc.dialect.R2dbcDialect;
+import org.springframework.data.r2dbc.mapping.R2dbcMappingContext;
+import org.springframework.data.r2dbc.repository.config.EnableR2dbcRepositories;
+import org.springframework.data.relational.RelationalManagedTypes;
+import org.springframework.data.relational.core.dialect.InsertRenderContext;
+import org.springframework.data.relational.core.mapping.DefaultNamingStrategy;
+import org.springframework.data.relational.core.mapping.NamingStrategy;
+import org.springframework.r2dbc.core.DatabaseClient;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
+
+@Configuration
+@EnableR2dbcRepositories({ "com.petclinic.app.repository" })
+@RegisterReflectionForBinding({ java.sql.Date[].class, java.sql.Time[].class, java.sql.Timestamp[].class })
+@EnableTransactionManagement
+public class DatabaseConfiguration {
+
+    /**
+     * Simple singleton to convert {@link UUID}s to their {@link String} representation.
+     */
+    @WritingConverter
+    public enum UUIDToStringConverter implements Converter<UUID, String> {
+        INSTANCE;
+
+        @Override
+        public String convert(UUID source) {
+            return source == null ? null : source.toString();
+        }
+    }
+
+    /**
+     * Simple singleton to convert from {@link String} {@link UUID} representation.
+     */
+    @ReadingConverter
+    public enum StringToUUIDConverter implements Converter<String, UUID> {
+        INSTANCE;
+
+        @Override
+        public UUID convert(String source) {
+            return source == null ? null : UUID.fromString(source);
+        }
+    }
+
+    // LocalDateTime seems to be the only type that is supported across all drivers at the moment
+    // See https://github.com/r2dbc/r2dbc-h2/pull/139 https://github.com/mirromutth/r2dbc-mysql/issues/105
+    @Bean
+    public R2dbcCustomConversions r2dbcCustomConversions(R2dbcDialect dialect) {
+        List<Object> converters = new ArrayList<>();
+        converters.add(InstantWriteConverter.INSTANCE);
+        converters.add(InstantReadConverter.INSTANCE);
+        converters.add(BitSetReadConverter.INSTANCE);
+        converters.add(DurationWriteConverter.INSTANCE);
+        converters.add(DurationReadConverter.INSTANCE);
+        converters.add(ZonedDateTimeReadConverter.INSTANCE);
+        converters.add(ZonedDateTimeWriteConverter.INSTANCE);
+        converters.add(StringToUUIDConverter.INSTANCE);
+        converters.add(UUIDToStringConverter.INSTANCE);
+        return R2dbcCustomConversions.of(dialect, converters);
+    }
+
+    /**
+     * Spring Data R2DBC 4 uses quoted (case-sensitive) table and column names by default, while the Liquibase
+     * changelogs create them unquoted. Keep plain identifiers, so both use the database default letter casing.
+     */
+    @Bean
+    public R2dbcMappingContext r2dbcMappingContext(
+        ObjectProvider<NamingStrategy> namingStrategy,
+        R2dbcCustomConversions r2dbcCustomConversions,
+        RelationalManagedTypes r2dbcManagedTypes
+    ) {
+        R2dbcMappingContext relationalMappingContext = R2dbcMappingContext.forPlainIdentifiers(
+            namingStrategy.getIfAvailable(() -> DefaultNamingStrategy.INSTANCE)
+        );
+        relationalMappingContext.setSimpleTypeHolder(r2dbcCustomConversions.getSimpleTypeHolder());
+        relationalMappingContext.setManagedTypes(r2dbcManagedTypes);
+        return relationalMappingContext;
+    }
+
+    @Bean
+    public R2dbcDialect dialect(ConnectionFactory connectionFactory) {
+        R2dbcDialect dialect = DialectResolver.getDialect(connectionFactory);
+        if (dialect instanceof MySqlDialect) {
+            // Spring Data renders an insert without values as `VALUES (DEFAULT)`, which MySQL and MariaDB reject for
+            // tables with more than one column. Use `() VALUES ()` so an entity with only null fields can be inserted.
+            return new MySqlDialect() {
+                @Override
+                public InsertRenderContext getInsertRenderContext() {
+                    return () -> " () VALUES ()";
+                }
+            };
+        }
+        return dialect;
+    }
+
+    /**
+     * Spring Boot resolves the dialect itself when creating the {@link R2dbcEntityTemplate}; create it with the
+     * customized dialect so it renders inserts without values in a form the database accepts.
+     */
+    @Bean
+    public R2dbcEntityTemplate r2dbcEntityTemplate(DatabaseClient databaseClient, R2dbcDialect dialect, R2dbcConverter converter) {
+        return new R2dbcEntityTemplate(databaseClient, dialect, converter);
+    }
+
+    @WritingConverter
+    public enum InstantWriteConverter implements Converter<Instant, LocalDateTime> {
+        INSTANCE;
+
+        public LocalDateTime convert(Instant source) {
+            return LocalDateTime.ofInstant(source, ZoneOffset.UTC);
+        }
+    }
+
+    @ReadingConverter
+    public enum InstantReadConverter implements Converter<LocalDateTime, Instant> {
+        INSTANCE;
+
+        @Override
+        public Instant convert(LocalDateTime localDateTime) {
+            return localDateTime.toInstant(ZoneOffset.UTC);
+        }
+    }
+
+    @ReadingConverter
+    public enum BitSetReadConverter implements Converter<BitSet, Boolean> {
+        INSTANCE;
+
+        @Override
+        public Boolean convert(BitSet bitSet) {
+            return bitSet.get(0);
+        }
+    }
+
+    @ReadingConverter
+    public enum ZonedDateTimeReadConverter implements Converter<LocalDateTime, ZonedDateTime> {
+        INSTANCE;
+
+        @Override
+        public ZonedDateTime convert(LocalDateTime localDateTime) {
+            // Be aware - we are using the UTC timezone
+            return ZonedDateTime.of(localDateTime, ZoneOffset.UTC);
+        }
+    }
+
+    @WritingConverter
+    public enum ZonedDateTimeWriteConverter implements Converter<ZonedDateTime, LocalDateTime> {
+        INSTANCE;
+
+        @Override
+        public LocalDateTime convert(ZonedDateTime zonedDateTime) {
+            return zonedDateTime.toLocalDateTime();
+        }
+    }
+
+    @WritingConverter
+    public enum DurationWriteConverter implements Converter<Duration, Long> {
+        INSTANCE;
+
+        @Override
+        public Long convert(Duration source) {
+            return source != null ? source.toMillis() : null;
+        }
+    }
+
+    @ReadingConverter
+    public enum DurationReadConverter implements Converter<Long, Duration> {
+        INSTANCE;
+
+        @Override
+        public Duration convert(Long source) {
+            return source != null ? Duration.ofMillis(source) : null;
+        }
+    }
+}
